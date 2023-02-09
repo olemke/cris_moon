@@ -1,1 +1,3 @@
+*.nc
 SDR_DATA_npp
+__pycache__
