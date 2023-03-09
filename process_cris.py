@@ -107,20 +107,23 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
                     f"{crisfile.name}:Max value {maxval} below threshold {threshold} "
                     f"for:{f_o_r} fov:{f_o_v}")
 
-    moon_intrusions['rad_for0_maxind'] = (('n_0_fov', 'n_0_scanid'), rad_0_maxind)
-    moon_intrusions['rad_for0_maxind'].attrs[
-        'description'] = "Indices of max radiances for FOR 0"
-    moon_intrusions['rad_for1_maxind'] = (('n_1_fov', 'n_1_scanid'), rad_1_maxind)
-    moon_intrusions['rad_for1_maxind'].attrs[
-        'description'] = "Indices of max radiances for FOR 1"
+    if rad_0_maxind:
+        moon_intrusions['rad_for0_maxind'] = (('n_0_fov', 'n_0_scanid'), rad_0_maxind)
+        moon_intrusions['rad_for0_maxind'].attrs[
+            'description'] = "Indices of max radiances for FOR 0"
+    if rad_1_maxind:
+        moon_intrusions['rad_for1_maxind'] = (('n_1_fov', 'n_1_scanid'), rad_1_maxind)
+        moon_intrusions['rad_for1_maxind'].attrs[
+            'description'] = "Indices of max radiances for FOR 1"
 
-    return moon_intrusions
+    return moon_intrusions if rad_0_maxind or rad_1_maxind else None
 
 
 def main():
     for crisfile in find_cris_files(basedir='./SDR_data_npp', dirfilter="*"):
         moon_intrusions = find_moon_intrusions(crisfile, wavelen_id=99, threshold=20)
-        moon_intrusions.to_netcdf(f"Rad_{crisfile.name}")
+        if moon_intrusions:
+            moon_intrusions.to_netcdf(f"Rad_{crisfile.name}")
 
 
 if __name__ == '__main__':
