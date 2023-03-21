@@ -120,6 +120,9 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
         threshold (int, optional): Desired threshold radiance for moon detection.
             Defaults to 20.
     """
+    if isinstance(crisfile, str):
+        crisfile = Path(crisfile)
+
     logging.debug(f"Loading {crisfile}")
     ds = xarray.load_dataset(crisfile)
     lunarfile = crisfile.parents[0] / 'lunar_npp.h5'
