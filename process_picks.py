@@ -103,45 +103,53 @@ def get_scans_with_maximum(df, fieldofregard=0):
     ]
 
 
-#%%
-find_moon_intrusions_partial = partial(find_moon_intrusions,
-                                       wavelen_id=99,
-                                       threshold=20)
-files = [f"../SDR_data_npp/{f}/Lunar_fsr_spectra_{f}_npp.nc" for f in filelist]
-with Pool(N_CPUS) as pool:
-    results = pool.map(find_moon_intrusions_partial, files)
+def main():
+    #%%
+    find_moon_intrusions_partial = partial(find_moon_intrusions,
+                                           wavelen_id=99,
+                                           threshold=20)
+    files = [
+        f"../SDR_data_npp/{f}/Lunar_fsr_spectra_{f}_npp.nc" for f in filelist
+    ]
+    with Pool(N_CPUS) as pool:
+        results = pool.map(find_moon_intrusions_partial, files)
 
-#%%
-valid_results = [
-    r for r in results
-    if r is not None and "rad_for0_maxind" in r and "rad_for1_maxind" in r
-]
+    #%%
+    valid_results = [
+        r for r in results
+        if r is not None and "rad_for0_maxind" in r and "rad_for1_maxind" in r
+    ]
 
-no_results = [filelist[i] for i, r in enumerate(results) if r is None]
-print(f"Files without results: {len(no_results)} out of {len(filelist)}")
+    no_results = [filelist[i] for i, r in enumerate(results) if r is None]
+    print(f"Files without results: {len(no_results)} out of {len(filelist)}")
 
-#%%
-max_scans = [
-    get_scans_with_maximum(df, fieldofregard=0) for df in valid_results
-]
-max_scans += [
-    get_scans_with_maximum(df, fieldofregard=1) for df in valid_results
-]
-max_scans = sum(max_scans, [])
-combined_scans = xr.concat(max_scans, dim="scans").rename("combined_scans")
-combined_scans.attrs[
-    "description"] = "Combination of all scans that fulfill selection criteria"
-wn = 10000 / cris_wavenumbers()
-combined_scans = combined_scans.assign_coords(n_Channels=wn)
-combined_scans.n_Channels.attrs["units"] = "µm"
+    #%%
+    max_scans = [
+        get_scans_with_maximum(df, fieldofregard=0) for df in valid_results
+    ]
+    max_scans += [
+        get_scans_with_maximum(df, fieldofregard=1) for df in valid_results
+    ]
+    max_scans = sum(max_scans, [])
+    combined_scans = xr.concat(max_scans, dim="scans").rename("combined_scans")
+    combined_scans.attrs[
+        "description"] = "Combination of all scans that fulfill selection criteria"
+    wn = 10000 / cris_wavenumbers()
+    combined_scans = combined_scans.assign_coords(n_Channels=wn)
+    combined_scans.n_Channels.attrs["units"] = "µm"
 
-# %%
-fig, ax = plt.subplots()
-combined_scans.mean(dim="scans").sel(n_Channels=slice(9.0, 7.0)).plot(ax=ax)
+    # %%
+    fig, ax = plt.subplots()
+    combined_scans.mean(dim="scans").sel(n_Channels=slice(9.0, 7.0)).plot(
+        ax=ax)
 
-# Point plot to visualize gaps in the frequency grid
-# combined_scans.mean(dim="scans").sel(n_Channels=slice(10.0, 9.0)).plot(
-#     ax=ax, marker='.', markersize=0.75, ls='None')
+    # Point plot to visualize gaps in the frequency grid
+    # combined_scans.mean(dim="scans").sel(n_Channels=slice(10.0, 9.0)).plot(
+    #     ax=ax, marker='.', markersize=0.75, ls='None')
 
-fig.savefig("mean_scans.pdf")
-#combines_scans.to_netcdf("combined_scans.nc")
+    fig.savefig("mean_scans.pdf")
+    #combines_scans.to_netcdf("combined_scans.nc")
+
+
+if __name__ == "__main__":
+    main()
