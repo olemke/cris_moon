@@ -125,7 +125,7 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
 
     logging.debug(f"Loading {crisfile}")
     ds = xarray.load_dataset(crisfile)
-    lunarfile = crisfile.parents[0] / 'lunar_npp.h5'
+    lunarfile = crisfile.parents[0] / f'lunar_{str(crisfile)[-6:-3]}.h5'
     dia = xarray.load_dataset(lunarfile).angular_diameter
 
     # Create output dataset and metadata
