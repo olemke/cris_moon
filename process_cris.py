@@ -1,4 +1,5 @@
 from pathlib import Path
+from glob import glob
 import xarray
 import numpy as np
 from scipy.constants import speed_of_light
@@ -14,6 +15,27 @@ cris_fov_diameter = 0.963
 
 number_of_extra_scans = 3
 radiance_average_extend = 2
+
+wavenumber_ranges = (
+    (30, 36),
+    (42, 59),
+    (56, 77),
+    (74, 101),
+    (95, 121),
+    (122, 149),
+    (148, 174),
+    (232, 259),
+    (374, 431),
+    (590, 631),
+    (933, 998),
+    (1193, 1282),
+    (1622, 1660),
+    (1658, 1695),
+    (1701, 1739),
+    (1717, 1755),
+    (1990, 2035),
+    (2112, 2169),
+)
 
 
 def cris_wavenumbers():
@@ -125,14 +147,19 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
 
     logging.debug(f"Loading {crisfile}")
     ds = xarray.load_dataset(crisfile)
-    lunarfile = crisfile.parents[0] / f'lunar_{str(crisfile)[-6:-3]}.h5'
-    dia = xarray.load_dataset(lunarfile).angular_diameter
+    lunarfile = glob(str(crisfile.parents[0] / f'lunar_*.h5'))[0]
+    try:
+        dia = xarray.load_dataset(lunarfile).angular_diameter
+    except ValueError:
+        raise ValueError(f"Could not find lunar file for {crisfile}")
 
     # Create output dataset and metadata
     moon_intrusions = xarray.Dataset()
     moon_intrusions.attrs["crisfile"] = str(crisfile)
     moon_intrusions.attrs["lunarfile"] = str(lunarfile)
     moon_intrusions.attrs["creationtime"] = datetime.datetime.now().isoformat()
+    moon_intrusions.attrs["n_Scans_cris"] = ds.Robs.shape[0]
+    moon_intrusions.attrs["n_Scans_lunar"] = dia.shape[0]
 
     rad_0_maxind = []
     rad_1_maxind = []
@@ -163,7 +190,8 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
                     moon_intrusions[varname].attrs[
                         'description'] = f"Radiances for FOR {f_o_r} FOV {f_o_v} ScanID {scanid}"
 
-                    calculate_radiance_averages(moon_intrusions, f_o_r, f_o_v, scanid, radiances)
+                    calculate_radiance_averages(
+                        moon_intrusions, f_o_r, f_o_v, scanid, radiances)
 
                 (rad_0_maxind if f_o_r == 0 else rad_1_maxind).append((f_o_v, maxind))
             else:
@@ -181,6 +209,71 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
             'description'] = "Indices of max radiances for FOR 1"
 
     return moon_intrusions if rad_0_maxind or rad_1_maxind else None
+
+
+def find_max_mean_radiances(moon_intrusions):
+    wavenumbers = np.array([np.mean(cris_wavenumbers()[r[0]:r[1]])
+                            for r in wavenumber_ranges])
+    max_means = []
+    max_fors = []
+    max_fovs = []
+    max_scanids = []
+    for wn, r in zip(wavenumbers, wavenumber_ranges):
+        max_mean = -np.inf
+        for f_o_r in range(2):
+            if not f'rad_for{f_o_r}_maxind' in moon_intrusions:
+                continue
+            for maxind in moon_intrusions[f'rad_for{f_o_r}_maxind'].values:
+                for scanid in range(maxind[1]-1, maxind[1]+2):
+                    if scanid > moon_intrusions.attrs['n_Scans_cris'] - 1:
+                        continue
+                    try:
+                        this_mean = np.mean(
+                            moon_intrusions[f'Rad_{f_o_r}_{maxind[0]}_{scanid}'].values[r[0]:r[1]])
+                    except KeyError:
+                        raise KeyError(
+                            f"Could not find variable Rad_{f_o_r}_{maxind[0]}_{scanid} for file {moon_intrusions.attrs['crisfile']}")
+                    if this_mean > max_mean:
+                        max_mean = this_mean
+                        max_for = f_o_r
+                        max_fov = maxind[0]
+                        max_scanid = scanid
+        if max_mean == -np.inf:
+            max_means.append(np.nan)
+            max_fors.append(np.nan)
+            max_fovs.append(np.nan)
+            max_scanids.append(np.nan)
+        else:
+            max_means.append(max_mean)
+            max_fors.append(max_for)
+            max_fovs.append(max_fov)
+            max_scanids.append(max_scanid)
+
+    moon_intrusions['max_wavenumbers'] = wavenumbers
+    moon_intrusions['max_fors'] = max_fors
+    moon_intrusions['max_fovs'] = max_fovs
+    moon_intrusions['max_scanids'] = max_scanids
+    moon_intrusions['max_radiances'] = max_means
+
+    c1 = 1.191042e-5
+    c2 = 1.4387752
+    max_bts = c2 * wavenumbers / np.log(1 + c1 * wavenumbers**3 / max_means / 3e-7)
+    moon_intrusions['max_brightness_temperatures'] = max_bts
+
+    # Get moon data
+    dias = xarray.load_dataset(moon_intrusions.lunarfile).angular_diameter
+    phases = xarray.load_dataset(moon_intrusions.lunarfile).phase
+    max_dias = []
+    max_phases = []
+    for f_o_r, f_o_v, scanid in zip(max_fors, max_fovs, max_scanids):
+        if np.isnan(f_o_r) or np.isnan(f_o_v) or np.isnan(scanid):
+            max_dias.append(np.nan)
+            max_phases.append(np.nan)
+            continue
+        max_dias.append(dias[scanid, f_o_r, f_o_v]*180./np.pi)
+        max_phases.append(phases[scanid, f_o_r, f_o_v]*180./np.pi)
+    moon_intrusions['max_angular_diameters'] = max_dias
+    moon_intrusions['max_phases'] = max_phases
 
 
 def main():
