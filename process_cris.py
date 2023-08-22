@@ -261,19 +261,27 @@ def find_max_mean_radiances(moon_intrusions):
     moon_intrusions['max_brightness_temperatures'] = max_bts
 
     # Get moon data
+    angles = xarray.load_dataset(moon_intrusions.lunarfile).angle
     dias = xarray.load_dataset(moon_intrusions.lunarfile).angular_diameter
     phases = xarray.load_dataset(moon_intrusions.lunarfile).phase
     max_dias = []
     max_phases = []
+    max_min_angle = []
+    max_scanid_min_angle = []
     for f_o_r, f_o_v, scanid in zip(max_fors, max_fovs, max_scanids):
         if np.isnan(f_o_r) or np.isnan(f_o_v) or np.isnan(scanid):
             max_dias.append(np.nan)
             max_phases.append(np.nan)
             continue
-        max_dias.append(dias[scanid, f_o_r, f_o_v]*180./np.pi)
-        max_phases.append(phases[scanid, f_o_r, f_o_v]*180./np.pi)
+        min_angle_index = np.argmin(angles[:, f_o_r, f_o_v].values)
+        max_dias.append(dias[min_angle_index, f_o_r, f_o_v]*180./np.pi)
+        max_phases.append(phases[min_angle_index, f_o_r, f_o_v]*180./np.pi)
+        max_min_angle.append(angles[min_angle_index, f_o_r, f_o_v]*180./np.pi)
+        max_scanid_min_angle.append(min_angle_index)
     moon_intrusions['max_angular_diameters'] = max_dias
     moon_intrusions['max_phases'] = max_phases
+    moon_intrusions['max_min_angle'] = max_min_angle
+    moon_intrusions['max_scanid_min_angle'] = max_scanid_min_angle
 
 
 def main():
