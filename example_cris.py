@@ -14,7 +14,6 @@ def process_file(crisfile):
             list(
                 zip(
                     np.round(moon_intrusions.max_wavenumbers.values, decimals=1),
-                    moon_intrusions.max_fors.values,
                     moon_intrusions.max_fovs.values,
                     moon_intrusions.max_scanids.values,
                     np.round(moon_intrusions.max_angular_diameters.values, decimals=2),

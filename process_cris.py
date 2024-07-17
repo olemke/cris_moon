@@ -73,7 +73,7 @@ def find_cris_files(basedir, dirfilter="*"):
                 yield path.absolute()
 
 
-def calculate_cris_radiances(ds, dia, scanid, f_o_v, f_o_r):
+def calculate_cris_radiances(ds, dia, scanid, f_o_v):
     """Calculate radiances for a given scan, field of view and field of regard.
 
     The counts are averaged over the two fields of regard.
@@ -83,7 +83,6 @@ def calculate_cris_radiances(ds, dia, scanid, f_o_v, f_o_r):
         dia (numpy.array): Lunar angular diameter
         scanid (int): Scan index
         f_o_v (int): Field of view index
-        f_o_r (int): Field of regard index
 
     Returns:
         numpy.array: Radiance values
@@ -93,7 +92,7 @@ def calculate_cris_radiances(ds, dia, scanid, f_o_v, f_o_r):
     # End
     for_average = (ds.Robs[scanid, 0, f_o_v, :] + ds.Robs[scanid, 1, f_o_v, :]) / 2.
     return for_average / speed_of_light_cgs * mjy_sterad * (
-        cris_fov_diameter / (dia[scanid, f_o_r, f_o_v] * 180. / np.pi))**2
+        cris_fov_diameter / (dia[scanid, 0, f_o_v] * 180. / np.pi))**2
 
 
 def calc_radiance_average(wavelength, extend, radiances):
@@ -103,34 +102,34 @@ def calc_radiance_average(wavelength, extend, radiances):
     return radiances[wl_pos - extend:wl_pos + extend + 1].mean()
 
 
-def calculate_radiance_average(moon_intrusions, f_o_r, f_o_v, scanid,
+def calculate_radiance_average(moon_intrusions, f_o_v, scanid,
                                radiances, wl):
-    varname = f"Rad_{f_o_r}_{f_o_v}_{scanid}_average_{str(wl).replace('.','_')}"
+    varname = f"Rad_{f_o_v}_{scanid}_average_{str(wl).replace('.','_')}"
     rad_avg = calc_radiance_average(wl, radiance_average_extend, radiances)
     moon_intrusions[varname] = rad_avg
     moon_intrusions[varname].attrs[
-        'description'] = f"Radiance average ({2*radiance_average_extend+1} values) around {wl}um for FOR {f_o_r} FOV {f_o_v} ScanID {scanid}"
+        'description'] = f"Radiance average ({2*radiance_average_extend+1} values) around {wl}um for FOV {f_o_v} ScanID {scanid}"
     return rad_avg
 
 
-def calculate_radiance_averages(moon_intrusions, f_o_r, f_o_v, scanid,
+def calculate_radiance_averages(moon_intrusions, f_o_v, scanid,
                                 radiances):
-    rad_avg_5_8 = calculate_radiance_average(moon_intrusions, f_o_r, f_o_v,
+    rad_avg_5_8 = calculate_radiance_average(moon_intrusions, f_o_v,
                                              scanid, radiances, 5.8)
-    rad_avg_6_1 = calculate_radiance_average(moon_intrusions, f_o_r, f_o_v,
+    rad_avg_6_1 = calculate_radiance_average(moon_intrusions, f_o_v,
                                              scanid, radiances, 6.1)
-    rad_avg_6_2 = calculate_radiance_average(moon_intrusions, f_o_r, f_o_v,
+    rad_avg_6_2 = calculate_radiance_average(moon_intrusions, f_o_v,
                                              scanid, radiances, 6.2)
 
-    varname = f"Rad_{f_o_r}_{f_o_v}_{scanid}_ratio_5_8_to_6_1"
+    varname = f"Rad_{f_o_v}_{scanid}_ratio_5_8_to_6_1"
     moon_intrusions[varname] = rad_avg_5_8 / rad_avg_6_1
     moon_intrusions[varname].attrs[
-        'description'] = f"Radiance ratio between 5.8um and 6.1um for FOR {f_o_r} FOV {f_o_v} ScanID {scanid}"
+        'description'] = f"Radiance ratio between 5.8um and 6.1um for FOV {f_o_v} ScanID {scanid}"
 
-    varname = f"Rad_{f_o_r}_{f_o_v}_{scanid}_ratio_avg_5_8_6_2_to_6_1"
+    varname = f"Rad_{f_o_v}_{scanid}_ratio_avg_5_8_6_2_to_6_1"
     moon_intrusions[varname] = (rad_avg_5_8 + rad_avg_6_2) / 2. / rad_avg_6_1
     moon_intrusions[varname].attrs[
-        'description'] = f"Radiance ratio between average of 5.8um+6.2um and 6.1um for FOR {f_o_r} FOV {f_o_v} ScanID {scanid}"
+        'description'] = f"Radiance ratio between average of 5.8um+6.2um and 6.1um for FOV {f_o_v} ScanID {scanid}"
 
 
 def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
@@ -161,96 +160,84 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
     moon_intrusions.attrs["n_Scans_cris"] = ds.Robs.shape[0]
     moon_intrusions.attrs["n_Scans_lunar"] = dia.shape[0]
 
-    rad_0_maxind = []
-    rad_1_maxind = []
-    for f_o_r in range(ds.Robs.shape[1]):
-        for f_o_v in range(ds.Robs.shape[2]):
-            selected_for_fov = ds.Robs[:, f_o_r, f_o_v, wavelen_id]
-            # Find index of maximum value
-            maxind = selected_for_fov.argsort()[-1:][0].item()
-            # Determine value of maximum
-            maxval = selected_for_fov[maxind].to_numpy()
+    rad_maxind = []
+    for f_o_v in range(ds.Robs.shape[2]):
+        selected_for_fov = ds.Robs[:, 0, f_o_v, wavelen_id]
+        # Find index of maximum value
+        maxind = selected_for_fov.argsort()[-1:][0].item()
+        # Determine value of maximum
+        maxval = selected_for_fov[maxind].to_numpy()
 
-            if maxval > threshold:
-                logging.info(
-                    f"{crisfile.name}:Found max value {maxval} at scanid {maxind} "
-                    f"for:{f_o_r} fov:{f_o_v}")
-                # Select additional scans around maximum
-                selected_scanids = range(
-                    ds.Robs.shape[0])[maxind - number_of_extra_scans:maxind +
-                                      number_of_extra_scans + 1]
-                logging.debug(
-                    f"Selected scan ids: {ds.Robs[selected_scanids, f_o_r, f_o_v, wavelen_id].to_numpy()}")
-                for scanid in selected_scanids:
-                    radiances = calculate_cris_radiances(ds, dia, scanid, f_o_v, f_o_r)
+        if maxval > threshold:
+            logging.info(
+                f"{crisfile.name}:Found max value {maxval} at scanid {maxind} "
+                f"for:0 fov:{f_o_v}")
+            # Select additional scans around maximum
+            selected_scanids = range(
+                ds.Robs.shape[0])[maxind - number_of_extra_scans:maxind +
+                                    number_of_extra_scans + 1]
+            logging.debug(
+                f"Selected scan ids: {ds.Robs[selected_scanids, 0, f_o_v, wavelen_id].to_numpy()}")
+            for scanid in selected_scanids:
+                radiances = calculate_cris_radiances(ds, dia, scanid, f_o_v)
 
-                    # Create variable for this spectrum
-                    varname = f"Rad_{f_o_r}_{f_o_v}_{scanid}"
-                    moon_intrusions[varname] = radiances
-                    moon_intrusions[varname].attrs[
-                        'description'] = f"Radiances for FOR {f_o_r} FOV {f_o_v} ScanID {scanid}"
+                # Create variable for this spectrum
+                varname = f"Rad_{f_o_v}_{scanid}"
+                moon_intrusions[varname] = radiances
+                moon_intrusions[varname].attrs[
+                    'description'] = f"Radiances for FOV {f_o_v} ScanID {scanid}"
 
-                    calculate_radiance_averages(
-                        moon_intrusions, f_o_r, f_o_v, scanid, radiances)
+                calculate_radiance_averages(
+                    moon_intrusions, f_o_v, scanid, radiances)
 
-                (rad_0_maxind if f_o_r == 0 else rad_1_maxind).append((f_o_v, maxind))
-            else:
-                logging.debug(
-                    f"{crisfile.name}:Max value {maxval} below threshold {threshold} "
-                    f"for:{f_o_r} fov:{f_o_v}")
+            rad_maxind.append((f_o_v, maxind))
+        else:
+            logging.debug(
+                f"{crisfile.name}:Max value {maxval} below threshold {threshold} "
+                f"fov:{f_o_v}")
 
-    if rad_0_maxind:
-        moon_intrusions['rad_for0_maxind'] = (('n_0_fov', 'n_0_scanid'), rad_0_maxind)
-        moon_intrusions['rad_for0_maxind'].attrs[
+    if rad_maxind:
+        moon_intrusions['rad_maxind'] = (('n_fov', 'n_scanid'), rad_maxind)
+        moon_intrusions['rad_maxind'].attrs[
             'description'] = "Indices of max radiances for FOR 0"
-    if rad_1_maxind:
-        moon_intrusions['rad_for1_maxind'] = (('n_1_fov', 'n_1_scanid'), rad_1_maxind)
-        moon_intrusions['rad_for1_maxind'].attrs[
-            'description'] = "Indices of max radiances for FOR 1"
 
-    return moon_intrusions if rad_0_maxind or rad_1_maxind else None
+    return moon_intrusions if rad_maxind else None
 
 
 def find_max_mean_radiances(moon_intrusions):
     wavenumbers = np.array([np.mean(cris_wavenumbers()[r[0]:r[1]])
                             for r in wavenumber_ranges])
     max_means = []
-    max_fors = []
     max_fovs = []
     max_scanids = []
     for wn, r in zip(wavenumbers, wavenumber_ranges):
         max_mean = -np.inf
-        for f_o_r in range(2):
-            if 'rad_for{f_o_r}_maxind' not in moon_intrusions:
-                continue
-            for maxind in moon_intrusions['rad_for{f_o_r}_maxind'].values:
-                for scanid in range(maxind[1]-1, maxind[1]+2):
-                    if scanid > moon_intrusions.attrs['n_Scans_cris'] - 1:
-                        continue
-                    try:
-                        this_mean = np.mean(
-                            moon_intrusions[f'Rad_{f_o_r}_{maxind[0]}_{scanid}'].values[r[0]:r[1]])
-                    except KeyError:
-                        raise KeyError(
-                            f"Could not find variable Rad_{f_o_r}_{maxind[0]}_{scanid} for file {moon_intrusions.attrs['crisfile']}")
-                    if this_mean > max_mean:
-                        max_mean = this_mean
-                        max_for = f_o_r
-                        max_fov = maxind[0]
-                        max_scanid = scanid
+        if 'rad_maxind' not in moon_intrusions:
+            continue
+        for maxind in moon_intrusions['rad_maxind'].values:
+            for scanid in range(maxind[1]-1, maxind[1]+2):
+                if scanid > moon_intrusions.attrs['n_Scans_cris'] - 1:
+                    continue
+                try:
+                    this_mean = np.mean(
+                        moon_intrusions[f'Rad_{maxind[0]}_{scanid}'].values[r[0]:r[1]])
+                except KeyError:
+                    raise KeyError(
+                        f"Could not find variable Rad_{maxind[0]}_{scanid} for file {moon_intrusions.attrs['crisfile']}")
+                if this_mean > max_mean:
+                    max_mean = this_mean
+                    max_fov = maxind[0]
+                    max_scanid = scanid
         if max_mean == -np.inf:
             max_means.append(np.nan)
-            max_fors.append(np.nan)
             max_fovs.append(np.nan)
             max_scanids.append(np.nan)
         else:
             max_means.append(max_mean)
-            max_fors.append(max_for)
             max_fovs.append(max_fov)
             max_scanids.append(max_scanid)
 
     moon_intrusions['max_wavenumbers'] = wavenumbers
-    moon_intrusions['max_fors'] = max_fors
     moon_intrusions['max_fovs'] = max_fovs
     moon_intrusions['max_scanids'] = max_scanids
     moon_intrusions['max_radiances'] = max_means
@@ -268,15 +255,17 @@ def find_max_mean_radiances(moon_intrusions):
     max_phases = []
     max_min_angle = []
     max_scanid_min_angle = []
-    for f_o_r, f_o_v, scanid in zip(max_fors, max_fovs, max_scanids):
-        if np.isnan(f_o_r) or np.isnan(f_o_v) or np.isnan(scanid):
+    for f_o_v, scanid in zip(max_fovs, max_scanids):
+        if np.isnan(f_o_v) or np.isnan(scanid):
             max_dias.append(np.nan)
             max_phases.append(np.nan)
             continue
-        min_angle_index = np.argmin(angles[:, f_o_r, f_o_v].values)
-        max_dias.append(dias[min_angle_index, f_o_r, f_o_v]*180./np.pi)
-        max_phases.append(phases[min_angle_index, f_o_r, f_o_v]*180./np.pi)
-        max_min_angle.append(angles[min_angle_index, f_o_r, f_o_v]*180./np.pi)
+        # We already averaged the FORs, so we use FOR 0 here since
+        # the values should be nearly identical for both FORs
+        min_angle_index = np.argmin(angles[:, 0, f_o_v].values)
+        max_dias.append(dias[min_angle_index, 0, f_o_v]*180./np.pi)
+        max_phases.append(phases[min_angle_index, 0, f_o_v]*180./np.pi)
+        max_min_angle.append(angles[min_angle_index, 0, f_o_v]*180./np.pi)
         max_scanid_min_angle.append(min_angle_index)
     moon_intrusions['max_angular_diameters'] = max_dias
     moon_intrusions['max_phases'] = max_phases
@@ -297,5 +286,5 @@ def main():
             moon_intrusions.to_netcdf(f"Rad_{crisfile.name}")
 
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()
