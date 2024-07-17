@@ -147,7 +147,7 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
 
     logging.debug(f"Loading {crisfile}")
     ds = xarray.load_dataset(crisfile)
-    lunarfile = glob(str(crisfile.parents[0] / f'lunar_*.h5'))[0]
+    lunarfile = glob(str(crisfile.parents[0] / 'lunar_*.h5'))[0]
     try:
         dia = xarray.load_dataset(lunarfile).angular_diameter
     except ValueError:
@@ -221,9 +221,9 @@ def find_max_mean_radiances(moon_intrusions):
     for wn, r in zip(wavenumbers, wavenumber_ranges):
         max_mean = -np.inf
         for f_o_r in range(2):
-            if not f'rad_for{f_o_r}_maxind' in moon_intrusions:
+            if 'rad_for{f_o_r}_maxind' not in moon_intrusions:
                 continue
-            for maxind in moon_intrusions[f'rad_for{f_o_r}_maxind'].values:
+            for maxind in moon_intrusions['rad_for{f_o_r}_maxind'].values:
                 for scanid in range(maxind[1]-1, maxind[1]+2):
                     if scanid > moon_intrusions.attrs['n_Scans_cris'] - 1:
                         continue
