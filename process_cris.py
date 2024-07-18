@@ -248,29 +248,31 @@ def find_max_mean_radiances(moon_intrusions):
     moon_intrusions['max_brightness_temperatures'] = max_bts
 
     # Get moon data
+    time = xarray.load_dataset(moon_intrusions.lunarfile).Time
     angles = xarray.load_dataset(moon_intrusions.lunarfile).angle
-    dias = xarray.load_dataset(moon_intrusions.lunarfile).angular_diameter
+    diameter = xarray.load_dataset(moon_intrusions.lunarfile).angular_diameter
     phases = xarray.load_dataset(moon_intrusions.lunarfile).phase
-    max_dias = []
+    max_diameter = []
     max_phases = []
-    max_min_angle = []
-    max_scanid_min_angle = []
+    max_angle = []
+    max_time = []
     for f_o_v, scanid in zip(max_fovs, max_scanids):
         if np.isnan(f_o_v) or np.isnan(scanid):
-            max_dias.append(np.nan)
+            max_diameter.append(np.nan)
             max_phases.append(np.nan)
+            max_angle.append(np.nan)
+            max_time.append(-1)
             continue
         # We already averaged the FORs, so we use FOR 0 here since
         # the values should be nearly identical for both FORs
-        min_angle_index = np.argmin(angles[:, 0, f_o_v].values)
-        max_dias.append(dias[min_angle_index, 0, f_o_v]*180./np.pi)
-        max_phases.append(phases[min_angle_index, 0, f_o_v]*180./np.pi)
-        max_min_angle.append(angles[min_angle_index, 0, f_o_v]*180./np.pi)
-        max_scanid_min_angle.append(min_angle_index)
-    moon_intrusions['max_angular_diameters'] = max_dias
+        max_diameter.append(diameter[scanid, 0, f_o_v]*180./np.pi)
+        max_phases.append(phases[scanid, 0, f_o_v]*180./np.pi)
+        max_angle.append(angles[scanid, 0, f_o_v]*180./np.pi)
+        max_time.append(time[scanid, 0, f_o_v])
+    moon_intrusions['max_angular_diameters'] = max_diameter
     moon_intrusions['max_phases'] = max_phases
-    moon_intrusions['max_min_angle'] = max_min_angle
-    moon_intrusions['max_scanid_min_angle'] = max_scanid_min_angle
+    moon_intrusions['max_angle'] = max_angle
+    moon_intrusions['max_time'] = max_time
 
 
 def main():
