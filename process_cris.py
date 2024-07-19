@@ -4,7 +4,9 @@ import xarray
 import numpy as np
 from scipy.constants import speed_of_light
 import logging
-import datetime
+from datetime import datetime, timedelta, UTC
+from astropy.time import Time as aTime
+from time import mktime
 
 logging.basicConfig(level=logging.INFO)
 
@@ -156,7 +158,7 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
     moon_intrusions = xarray.Dataset()
     moon_intrusions.attrs["crisfile"] = str(crisfile)
     moon_intrusions.attrs["lunarfile"] = str(lunarfile)
-    moon_intrusions.attrs["creationtime"] = datetime.datetime.now().isoformat()
+    moon_intrusions.attrs["creationtime"] = datetime.now().isoformat()
     moon_intrusions.attrs["n_Scans_cris"] = ds.Robs.shape[0]
     moon_intrusions.attrs["n_Scans_lunar"] = dia.shape[0]
 
@@ -204,6 +206,15 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
     return moon_intrusions if rad_maxind else None
 
 
+def tai_time_to_datetime(tai):
+    """Convert TAI time to datetime object."""
+    # Difference between TAI and UTC in seconds
+    offset = (datetime(1970, 1, 1, tzinfo=UTC) -
+              datetime(1958, 1, 1, tzinfo=UTC)).total_seconds()
+
+    return aTime(tai/1e6 - offset, format='unix_tai', scale='tai').utc.datetime
+
+
 def find_max_mean_radiances(moon_intrusions):
     wavenumbers = np.array([np.mean(cris_wavenumbers()[r[0]:r[1]])
                             for r in wavenumber_ranges])
@@ -248,7 +259,7 @@ def find_max_mean_radiances(moon_intrusions):
     moon_intrusions['max_brightness_temperatures'] = max_bts
 
     # Get moon data
-    time = xarray.load_dataset(moon_intrusions.lunarfile).Time
+    timestamp = xarray.load_dataset(moon_intrusions.lunarfile).Time
     angles = xarray.load_dataset(moon_intrusions.lunarfile).angle
     diameter = xarray.load_dataset(moon_intrusions.lunarfile).angular_diameter
     phases = xarray.load_dataset(moon_intrusions.lunarfile).phase
@@ -268,11 +279,22 @@ def find_max_mean_radiances(moon_intrusions):
         max_diameter.append(diameter[scanid, 0, f_o_v]*180./np.pi)
         max_phases.append(phases[scanid, 0, f_o_v]*180./np.pi)
         max_angle.append(angles[scanid, 0, f_o_v]*180./np.pi)
-        max_time.append(time[scanid, 0, f_o_v])
+        max_time.append(float(timestamp[scanid, 0, f_o_v]))
     moon_intrusions['max_angular_diameters'] = max_diameter
+    moon_intrusions['max_angular_diameters'].attrs['description'] = "Angular diameter of moon at maximum radiance"
     moon_intrusions['max_phases'] = max_phases
+    moon_intrusions['max_phases'].attrs['description'] = "Phase angle of moon at maximum radiance"
     moon_intrusions['max_angle'] = max_angle
-    moon_intrusions['max_time'] = max_time
+    moon_intrusions['max_angle'].attrs['description'] = "Angle between moon and satellite at maximum radiance"
+    moon_intrusions["max_time"] = [
+        (tai_time_to_datetime(t).strftime("%Y-%m-%d %H:%M:%S.%f"))
+        if t > 0 else "" for t in max_time
+    ]
+    moon_intrusions["max_time"].attrs["description"] = "Time of maximum radiance"
+    moon_intrusions["max_unixtime"] = [
+        (mktime(tai_time_to_datetime(t).timetuple())) if t > 0 else -1 for t in max_time
+    ]
+    moon_intrusions["max_time"].attrs["description"] = "Unix timestamp of maximum radiance"
 
 
 def main():
