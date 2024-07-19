@@ -4,9 +4,10 @@ import xarray
 import numpy as np
 from scipy.constants import speed_of_light
 import logging
-from datetime import datetime, timedelta, UTC
+import datetime as dt
 from astropy.time import Time as aTime
 from time import mktime
+import xarray as xr
 
 logging.basicConfig(level=logging.INFO)
 
@@ -157,7 +158,7 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
     moon_intrusions = xarray.Dataset()
     moon_intrusions.attrs["crisfile"] = str(crisfile)
     moon_intrusions.attrs["lunarfile"] = str(lunarfile)
-    moon_intrusions.attrs["creationtime"] = datetime.now().isoformat()
+    moon_intrusions.attrs["creationtime"] = dt.datetime.now().isoformat()
     moon_intrusions.attrs["n_Scans_cris"] = ds.Robs.shape[0]
     moon_intrusions.attrs["n_Scans_lunar"] = dia.shape[0]
 
@@ -208,8 +209,8 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
 def tai_time_to_datetime(tai):
     """Convert TAI time to datetime object."""
     # Difference between TAI and UTC in seconds
-    offset = (datetime(1970, 1, 1, tzinfo=UTC) -
-              datetime(1958, 1, 1, tzinfo=UTC)).total_seconds()
+    offset = (dt.datetime(1970, 1, 1, tzinfo=dt.timezone.utc) -
+              dt.datetime(1958, 1, 1, tzinfo=dt.timezone.utc)).total_seconds()
 
     return aTime(tai/1e6 - offset, format='unix_tai', scale='tai').utc.datetime
 
@@ -294,6 +295,57 @@ def find_max_mean_radiances(moon_intrusions):
         (mktime(tai_time_to_datetime(t).timetuple())) if t > 0 else -1 for t in max_time
     ]
     moon_intrusions["max_time"].attrs["description"] = "Unix timestamp of maximum radiance"
+
+    return moon_intrusions
+
+
+def collect_results_in_csv(path, csvfile="intrusions.csv"):
+    csv_fields = [
+        "max_time",
+        "max_fovs",
+        "max_scanids",
+        "max_angular_diameters",
+        "max_phases",
+        "max_radiances",
+        "max_brightness_temperatures",
+    ]
+    sep = ","
+    with open(csvfile, "w", newline="") as csvfile:
+        first = True
+        for field in csv_fields:
+            if first:
+                first = False
+            else:
+                csvfile.write(sep)
+            if field == "max_time":
+                csvfile.write("date" + sep + "time")
+            else:
+                csvfile.write(f"{field.replace('max_', '')}")
+        csvfile.write(sep + "crisfile")
+        csvfile.write("\n")
+        for filename in Path(path).rglob("Rad_*.nc"):
+            ds = xr.open_dataset(filename)
+            outputranges = [(569, 700), (969, 1070), (1599, 1840)]
+
+            values = np.stack([ds[f].values for f in csv_fields]).T
+            first = True
+            for r in outputranges:
+                i = wavenumber_ranges.index(r)
+                first = True
+                if not values[i][0]:
+                    continue
+                for value, field in zip(values[i], csv_fields):
+                    if first:
+                        first = False
+                    else:
+                        csvfile.write(sep)
+                    if field == "max_time":
+                        t = value.split(" ")
+                        csvfile.write(f"{t[0]}{sep}{t[1]}")
+                    else:
+                        csvfile.write(f"{value}")
+                csvfile.write(sep + f"{Path(ds.attrs['crisfile']).name}")
+                csvfile.write("\n")
 
 
 def main():
