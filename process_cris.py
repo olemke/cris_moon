@@ -306,6 +306,7 @@ def collect_results_in_csv(path, csvfile="intrusions.csv"):
         "max_scanids",
         "max_angular_diameters",
         "max_phases",
+        "max_wavenumbers",
         "max_radiances",
         "max_brightness_temperatures",
     ]
