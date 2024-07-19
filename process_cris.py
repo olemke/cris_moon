@@ -199,7 +199,7 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
                 f"fov:{f_o_v}")
 
     if rad_maxind:
-        moon_intrusions['rad_maxind'] = (('n_fov', 'n_scanid'), rad_maxind)
+        moon_intrusions['rad_maxind'] = (('n_intrusions', 'n_values'), rad_maxind)
         moon_intrusions['rad_maxind'].attrs[
             'description'] = "Indices of max radiances for FOR 0"
 
