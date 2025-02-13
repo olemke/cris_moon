@@ -9,7 +9,7 @@ from multiprocessing import Pool
 
 
 def process_file(crisfile, output_directory="out"):
-    moon_intrusions = find_moon_intrusions(crisfile, wavelen_id=99, threshold=20)
+    moon_intrusions = find_moon_intrusions(crisfile, wavelen_id=99, threshold=16)
 
     if moon_intrusions:
         find_max_mean_radiances(moon_intrusions)

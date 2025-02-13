@@ -17,7 +17,9 @@ speed_of_light_cgs = speed_of_light * 1e2
 cris_fov_diameter = 0.963
 
 number_of_extra_scans = 3
-radiance_average_extend = 2
+rad_ave_ext_SW = 120
+rad_ave_ext_MW = 50
+rad_ave_ext_LW = 65
 
 wavenumber_ranges = (
     (30, 36),
@@ -105,7 +107,7 @@ def calc_radiance_average(wavelength, extend, radiances):
 
 
 def calculate_radiance_average(moon_intrusions, f_o_v, scanid,
-                               radiances, wl):
+                               radiances, radiance_average_extend, wl):
     varname = f"Rad_{f_o_v}_{scanid}_average_{str(wl).replace('.','_')}"
     rad_avg = calc_radiance_average(wl, radiance_average_extend, radiances)
     moon_intrusions[varname] = rad_avg
@@ -116,22 +118,27 @@ def calculate_radiance_average(moon_intrusions, f_o_v, scanid,
 
 def calculate_radiance_averages(moon_intrusions, f_o_v, scanid,
                                 radiances):
-    rad_avg_5_8 = calculate_radiance_average(moon_intrusions, f_o_v,
-                                             scanid, radiances, 5.8)
-    rad_avg_6_1 = calculate_radiance_average(moon_intrusions, f_o_v,
-                                             scanid, radiances, 6.1)
-    rad_avg_6_2 = calculate_radiance_average(moon_intrusions, f_o_v,
-                                             scanid, radiances, 6.2)
+    rad_avg_SW = calculate_radiance_average(moon_intrusions, f_o_v,
+                                             scanid, radiances, rad_ave_ext_SW, 4.4705)
+    rad_avg_MW = calculate_radiance_average(moon_intrusions, f_o_v,
+                                             scanid, radiances, rad_ave_ext_MW, 7.1556)
+    rad_avg_LW = calculate_radiance_average(moon_intrusions, f_o_v,
+                                             scanid, radiances, rad_ave_ext_LW, 9.5694)
 
-    varname = f"Rad_{f_o_v}_{scanid}_ratio_5_8_to_6_1"
-    moon_intrusions[varname] = rad_avg_5_8 / rad_avg_6_1
+    varname = f"Rad_{f_o_v}_{scanid}_SW"
+    moon_intrusions[varname] = rad_avg_SW
     moon_intrusions[varname].attrs[
-        'description'] = f"Radiance ratio between 5.8um and 6.1um for FOV {f_o_v} ScanID {scanid}"
+        'description'] = f"Radiance average SW for FOV {f_o_v} ScanID {scanid}"
 
-    varname = f"Rad_{f_o_v}_{scanid}_ratio_avg_5_8_6_2_to_6_1"
-    moon_intrusions[varname] = (rad_avg_5_8 + rad_avg_6_2) / 2. / rad_avg_6_1
+    varname = f"Rad_{f_o_v}_{scanid}_MW"
+    moon_intrusions[varname] = rad_avg_MW
     moon_intrusions[varname].attrs[
-        'description'] = f"Radiance ratio between average of 5.8um+6.2um and 6.1um for FOV {f_o_v} ScanID {scanid}"
+        'description'] = f"Radiance average MW for FOV {f_o_v} ScanID {scanid}"
+    
+    varname = f"Rad_{f_o_v}_{scanid}_LW"
+    moon_intrusions[varname] = rad_avg_LW
+    moon_intrusions[varname].attrs[
+        'description'] = f"Radiance average LW for FOV {f_o_v} ScanID {scanid}"
 
 
 def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
