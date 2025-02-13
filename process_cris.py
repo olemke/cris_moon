@@ -248,8 +248,8 @@ def find_max_mean_radiances(moon_intrusions):
                     max_scanid = scanid
         if max_mean == -np.inf:
             max_means.append(np.nan)
-            max_fovs.append(np.nan)
-            max_scanids.append(np.nan)
+            max_fovs.append(-1)
+            max_scanids.append(-1)
         else:
             max_means.append(max_mean)
             max_fovs.append(max_fov)
@@ -275,7 +275,7 @@ def find_max_mean_radiances(moon_intrusions):
     max_angle = []
     max_time = []
     for f_o_v, scanid in zip(max_fovs, max_scanids):
-        if np.isnan(f_o_v) or np.isnan(scanid):
+        if f_o_v == -1 or scanid == -1:
             max_diameter.append(np.nan)
             max_phases.append(np.nan)
             max_angle.append(np.nan)
@@ -336,12 +336,12 @@ def collect_results_in_csv(path, csvfile="intrusions.csv"):
             outputranges = [(569, 700), (969, 1070), (1599, 1840)]
 
             values = np.stack([ds[f].values for f in csv_fields]).T
-            first = True
             for r in outputranges:
                 i = wavenumber_ranges.index(r)
-                first = True
                 if not values[i][0]:
+                    logging.info(f"No data for {r} in {filename}")
                     continue
+                first = True
                 for value, field in zip(values[i], csv_fields):
                     if first:
                         first = False
