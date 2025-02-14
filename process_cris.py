@@ -169,7 +169,8 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
     moon_intrusions.attrs["n_Scans_cris"] = ds.Robs.shape[0]
     moon_intrusions.attrs["n_Scans_lunar"] = dia.shape[0]
 
-    rad_maxind = []
+    mi_maxind = []
+    mi_maxval = []
     for f_o_v in range(ds.Robs.shape[2]):
         selected_for_fov = ds.Robs[:, 0, f_o_v, wavelen_id]
         # Find index of maximum value
@@ -199,18 +200,22 @@ def find_moon_intrusions(crisfile, wavelen_id=99, threshold=20):
                 calculate_radiance_averages(
                     moon_intrusions, f_o_v, scanid, radiances)
 
-            rad_maxind.append((f_o_v, maxind))
+            mi_maxind.append((f_o_v, maxind))
+            mi_maxval.append(maxval)
         else:
             logging.debug(
                 f"{crisfile.name}:Max value {maxval} below threshold {threshold} "
                 f"fov:{f_o_v}")
 
-    if rad_maxind:
-        moon_intrusions['rad_maxind'] = (('n_intrusions', 'n_values'), rad_maxind)
-        moon_intrusions['rad_maxind'].attrs[
+    if mi_maxind:
+        moon_intrusions['mi_maxind'] = (('n_intrusions', 'n_values'), mi_maxind)
+        moon_intrusions['mi_maxind'].attrs[
             'description'] = "Indices of max radiances for FOR 0"
+        moon_intrusions["mi_maxval"] = (("n_intrusions"), mi_maxval)
+        moon_intrusions["mi_maxval"].attrs[
+            "description"] = f"Radiance for wavelen id {wavelen_id} for FOR 0"
 
-    return moon_intrusions if rad_maxind else None
+    return moon_intrusions if mi_maxind else None
 
 
 def tai_time_to_datetime(tai):
@@ -228,11 +233,15 @@ def find_max_mean_radiances(moon_intrusions):
     max_means = []
     max_fovs = []
     max_scanids = []
-    for wn, r in zip(wavenumbers, wavenumber_ranges):
-        max_mean = -np.inf
-        if 'rad_maxind' not in moon_intrusions:
-            continue
-        for maxind in moon_intrusions['rad_maxind'].values:
+    max_bts = []
+    if 'mi_maxind' not in moon_intrusions:
+        raise RuntimeError("No moon intrusionsfound")
+    for maxind in moon_intrusions['mi_maxind'].values:
+        tmax_means = []
+        tmax_fovs = []
+        tmax_scanids = []
+        for wn, r in zip(wavenumbers, wavenumber_ranges):
+            max_mean = -np.inf
             for scanid in range(maxind[1]-1, maxind[1]+2):
                 if scanid > moon_intrusions.attrs['n_Scans_cris'] - 1:
                     continue
@@ -246,61 +255,72 @@ def find_max_mean_radiances(moon_intrusions):
                     max_mean = this_mean
                     max_fov = maxind[0]
                     max_scanid = scanid
-        if max_mean == -np.inf:
-            max_means.append(np.nan)
-            max_fovs.append(-1)
-            max_scanids.append(-1)
-        else:
-            max_means.append(max_mean)
-            max_fovs.append(max_fov)
-            max_scanids.append(max_scanid)
+            if max_mean == -np.inf:
+                tmax_means.append(np.nan)
+                tmax_fovs.append(-1)
+                tmax_scanids.append(-1)
+            else:
+                tmax_means.append(max_mean)
+                tmax_fovs.append(max_fov)
+                tmax_scanids.append(max_scanid)
+        max_means.append(tmax_means)
+        max_fovs.append(tmax_fovs)
+        max_scanids.append(tmax_scanids)
 
-    moon_intrusions['max_wavenumbers'] = wavenumbers
-    moon_intrusions['max_fovs'] = max_fovs
-    moon_intrusions['max_scanids'] = max_scanids
-    moon_intrusions['max_radiances'] = max_means
+        c1 = 1.191042e-5
+        c2 = 1.4387752
+        max_bts.append(c2 * wavenumbers / np.log(1 + c1 * wavenumbers**3 / tmax_means / 3e-7))
 
-    c1 = 1.191042e-5
-    c2 = 1.4387752
-    max_bts = c2 * wavenumbers / np.log(1 + c1 * wavenumbers**3 / max_means / 3e-7)
-    moon_intrusions['max_brightness_temperatures'] = max_bts
+
+    moon_intrusions['max_wavenumbers'] = (('n_intrusions', 'n_wavenumbers'), np.tile(wavenumbers, (len(moon_intrusions['mi_maxind']), 1)))
+    moon_intrusions['max_fovs'] = (('n_intrusions', 'n_wavenumbers'), max_fovs)
+    moon_intrusions['max_scanids'] = (('n_intrusions', 'n_wavenumbers'), max_scanids)
+    moon_intrusions['max_radiances'] = (('n_intrusions', 'n_wavenumbers'), max_means)
+    moon_intrusions['max_brightness_temperatures'] = (('n_intrusions', 'n_wavenumbers'), max_bts)
 
     # Get moon data
     timestamp = xarray.load_dataset(moon_intrusions.lunarfile).Time
     angles = xarray.load_dataset(moon_intrusions.lunarfile).angle
     diameter = xarray.load_dataset(moon_intrusions.lunarfile).angular_diameter
     phases = xarray.load_dataset(moon_intrusions.lunarfile).phase
-    max_diameter = []
+    max_diameters = []
     max_phases = []
-    max_angle = []
-    max_time = []
-    for f_o_v, scanid in zip(max_fovs, max_scanids):
-        if f_o_v == -1 or scanid == -1:
-            max_diameter.append(np.nan)
-            max_phases.append(np.nan)
-            max_angle.append(np.nan)
-            max_time.append(-1)
-            continue
-        # We already averaged the FORs, so we use FOR 0 here since
-        # the values should be nearly identical for both FORs
-        max_diameter.append(diameter[scanid, 0, f_o_v]*180./np.pi)
-        max_phases.append(phases[scanid, 0, f_o_v]*180./np.pi)
-        max_angle.append(angles[scanid, 0, f_o_v]*180./np.pi)
-        max_time.append(float(timestamp[scanid, 0, f_o_v]))
-    moon_intrusions['max_angular_diameters'] = max_diameter
+    max_angles = []
+    max_times = []
+    for rf_o_v, rscanid in zip(max_fovs, max_scanids):
+        max_diameter = []
+        max_phase = []
+        max_angle = []
+        max_time = []
+        for f_o_v, scanid in zip(rf_o_v, rscanid):
+            if f_o_v == -1 or scanid == -1:
+                max_diameter.append(np.nan)
+                max_phase.append(np.nan)
+                max_angle.append(np.nan)
+                max_time.append(-1)
+                continue
+            # We already averaged the FORs, so we use FOR 0 here since
+            # the values should be nearly identical for both FORs
+            max_diameter.append(diameter[scanid, 0, f_o_v]*180./np.pi)
+            max_phase.append(phases[scanid, 0, f_o_v]*180./np.pi)
+            max_angle.append(angles[scanid, 0, f_o_v]*180./np.pi)
+            max_time.append(float(timestamp[scanid, 0, f_o_v]))
+        max_diameters.append(max_diameter)
+        max_phases.append(max_phase)
+        max_angles.append(max_angle)
+        max_times.append(max_time)
+    moon_intrusions['max_angular_diameters'] = (('n_intrusions', 'n_wavenumbers'), max_diameters)
     moon_intrusions['max_angular_diameters'].attrs['description'] = "Angular diameter of moon at maximum radiance"
-    moon_intrusions['max_phases'] = max_phases
+    moon_intrusions['max_phases'] = (('n_intrusions', 'n_wavenumbers'), max_phases)
     moon_intrusions['max_phases'].attrs['description'] = "Phase angle of moon at maximum radiance"
-    moon_intrusions['max_angle'] = max_angle
+    moon_intrusions['max_angle'] = (('n_intrusions', 'n_wavenumbers'), max_angles)
     moon_intrusions['max_angle'].attrs['description'] = "Angle between moon and satellite at maximum radiance"
-    moon_intrusions["max_time"] = [
-        (tai_time_to_datetime(t).strftime("%Y-%m-%d %H:%M:%S.%f"))
-        if t > 0 else "" for t in max_time
-    ]
+    moon_intrusions["max_time"] = (('n_intrusions', 'n_wavenumbers'), [
+        [(tai_time_to_datetime(t).strftime("%Y-%m-%d %H:%M:%S.%f")) if t > 0 else "" for t in r] for r in max_times
+    ])
     moon_intrusions["max_time"].attrs["description"] = "Time of maximum radiance"
-    moon_intrusions["max_unixtime"] = [
-        (mktime(tai_time_to_datetime(t).timetuple())) if t > 0 else -1 for t in max_time
-    ]
+    moon_intrusions["max_unixtime"] = (('n_intrusions', 'n_wavenumbers'), [
+    [(mktime(tai_time_to_datetime(t).timetuple())) if t > 0 else -1 for t in r] for r in max_times ])
     moon_intrusions["max_time"].attrs["description"] = "Unix timestamp of maximum radiance"
 
     return moon_intrusions
@@ -335,25 +355,29 @@ def collect_results_in_csv(path, csvfile="intrusions.csv"):
             ds = xr.open_dataset(filename)
             outputranges = [(569, 700), (969, 1070), (1599, 1840)]
 
-            values = np.stack([ds[f].values for f in csv_fields]).T
-            for r in outputranges:
-                i = wavenumber_ranges.index(r)
-                if not values[i][0]:
-                    logging.info(f"No data for {r} in {filename}")
+            maxval = np.max(ds.mi_maxval.values)
+            for r in range(len(ds.n_intrusions)):
+                if ds.mi_maxval.values[r] < maxval*0.95:
                     continue
-                first = True
-                for value, field in zip(values[i], csv_fields):
-                    if first:
-                        first = False
-                    else:
-                        csvfile.write(sep)
-                    if field == "max_time":
-                        t = value.split(" ")
-                        csvfile.write(f"{t[0]}{sep}{t[1]}")
-                    else:
-                        csvfile.write(f"{value}")
-                csvfile.write(sep + f"{Path(ds.attrs['crisfile']).name}")
-                csvfile.write("\n")
+                values = np.stack([ds[f].values[r, :] for f in csv_fields]).T
+                for r in outputranges:
+                    i = wavenumber_ranges.index(r)
+                    if not values[i][0]:
+                        logging.info(f"No data for {r} in {filename}")
+                        continue
+                    first = True
+                    for value, field in zip(values[i], csv_fields):
+                        if first:
+                            first = False
+                        else:
+                            csvfile.write(sep)
+                        if field == "max_time":
+                            t = value.split(" ")
+                            csvfile.write(f"{t[0]}{sep}{t[1]}")
+                        else:
+                            csvfile.write(f"{value}")
+                    csvfile.write(sep + f"{Path(ds.attrs['crisfile']).name}")
+                    csvfile.write("\n")
 
 
 def main():
